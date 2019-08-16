@@ -12,7 +12,8 @@ Abdel-Wahab, Peter Smibert & Dan A. Landau. Nature volume 571, pages 355–360
 
 ## Introduction
 
-TBD
+Access to the data can be found here:
+https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE117826
 
 ## Questions
 
