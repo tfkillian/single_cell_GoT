@@ -1,0 +1,11 @@
+inst/doc
+.Rproj.user
+.Rhistory
+.RData
+.RDataTmp
+.Ruserdata
+GSM3110765
+barcodes.tsv
+genes.tsv
+matrix.mtx
+regev_lab_cell_cycle_genes.txt

@@ -1,0 +1,337 @@
+---
+title: "Seurat_RH41"
+author: "Theo Killian"
+date: "August 13, 2019"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+vignette: >
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteIndexEntry{depmap}
+  %\usepackage[utf8]{inputenc}
+---
+
+## Single Cell
+
+```{r, echo = FALSE, results = 'asis'}
+suppressPackageStartupMessages(library("dplyr"))
+knitr::opts_chunk$set(collapse=TRUE, comment="#>", warning=FALSE, message=FALSE)
+```
+
+```{r load_libraries, warning=FALSE}
+## load libraries
+# library("BiocVersion")
+# library("DESeq2")
+# library("ggplot2")
+# library("tidyverse")
+# library("dplyr")
+# library("biomaRt")
+# library("ggrepel")
+# library("RColorBrewer")
+# library("gplots")
+library('R.utils')
+library("dplyr")
+library("Seurat")
+library("ggplot2")
+library('openxlsx')
+```
+
+```{r}
+# make directory GSM3110765
+dir.create("GSM3110765")
+```
+
+```{r}
+# download files into directory from online source
+# https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM3110765&fbclid=IwAR0u0KZ2Po4kxNg8KN6CLPeMJHfgDMDVgfCdC-dVq_FOYyQXwXy7-Yzbf5k
+download.file("https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSM3110765&format=file&file=GSM3110765%5Fbarcodes%2Etsv%2Egz", "GSM3110765/barcodes.tsv.gz")
+download.file("https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSM3110765&format=file&file=GSM3110765%5Fgenes%2Etsv%2Egz", "GSM3110765/genes.tsv.gz")
+download.file("https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSM3110765&format=file&file=GSM3110765%5Fmatrix%2Emtx%2Egz", "GSM3110765/matrix.mtx.gz")
+```
+
+```{r}
+####unzip gz files####
+gunzip("GSM3110765/matrix.mtx.gz")
+gunzip("GSM3110765/barcodes.tsv.gz")
+gunzip("GSM3110765/genes.tsv.gz")
+```
+
+```{r}
+###remove GSM3110765 from name of the file
+######Seurat#######
+RH41.data <- Read10X("GSM3110765")
+
+RH41 <- CreateSeuratObject(counts = RH41.data, project = "rh41",
+                           min.cells = 3, min.features = 200)
+RH41
+```
+
+```{r}
+#An object of class Seurat 
+#20034 features across 7260 samples within 1 assay 
+#Active assay: RNA (20034 features)
+
+# The [[ operator can add columns to object metadata. This is a great place to
+# stash QC stats
+RH41[["percent.mt"]] <- PercentageFeatureSet(RH41, pattern = "^MT-")
+
+# Visualize QC metrics as a violin plot
+VlnPlot(RH41, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+```{r}
+# FeatureScatter is typically used to visualize feature-feature relationships,
+# but can be used
+# for anything calculated by the object, i.e. columns in object metadata, PC
+# scores etc.
+plot1 <- FeatureScatter(RH41, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(RH41, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+CombinePlots(plots = list(plot1, plot2))
+```
+
+```{r}
+RH41 <- subset(RH41, subset = nFeature_RNA > 200 & nFeature_RNA < 9000 & percent.mt < 20)
+
+##Normalizing the data
+RH41 <- NormalizeData(RH41, normalization.method = "LogNormalize",
+                      scale.factor = 10000)
+
+###Identification of highly variable features (feature selection)
+RH41 <- FindVariableFeatures(RH41, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(RH41), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(RH41)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = FALSE)
+CombinePlots(plots = list(plot1, plot2))
+```
+
+```{r}
+###Scaling the data
+all.genes <- rownames(RH41)
+RH41 <- ScaleData(RH41, features = all.genes)
+
+###Perform linear dimensional reduction
+RH41 <- RunPCA(RH41, features = VariableFeatures(object = RH41))
+```
+
+```{r}
+# Examine and visualize PCA results a few different ways
+print(RH41[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+```{r}
+VizDimLoadings(RH41, dims = 1:2, reduction = "pca")
+```
+
+```{r}
+DimPlot(RH41, reduction = "pca")
+```
+
+```{r}
+##Exploration of the primary sources of heterogeneity in a dataset
+DimHeatmap(RH41, dims = 1, cells = 500, balanced = TRUE)
+```
+
+```{r}
+DimHeatmap(RH41, dims = 1:15, cells = 500, balanced = TRUE)
+```
+
+```{r}
+# Determine the 'dimensionality' of the dataset
+RH41 <- JackStraw(RH41, num.replicate = 100)
+RH41 <- ScoreJackStraw(RH41, dims = 1:20)
+JackStrawPlot(RH41, dims = 1:15)
+```
+
+```{r}
+ElbowPlot(RH41)
+```
+
+
+```{r}
+# #Cluster the cells
+# RH41 <- FindNeighbors(RH41, dims = 1:8)
+# RH41 <- FindClusters(RH41, resolution = 0.5)
+# 
+# # Look at cluster IDs of the first 5 cells
+# head(Idents(RH41), 5)
+# 
+# ###Run non-linear dimensional reduction (UMAP/tSNE)
+# RH41 <- RunUMAP(RH41, dims = 1:8)
+# DimPlot(RH41, reduction = "umap")
+```
+
+```{r}
+##saveRDS(RH41, file = "RH41.rds")
+
+# find all markers of cluster 0
+cluster0.markers <- FindMarkers(RH41, ident.1 = 0, min.pct = 0.25)
+head(cluster0.markers, n = 5)
+```
+
+```{r}
+# find all markers of cluster 1
+cluster1.markers <- FindMarkers(RH41, ident.1 = 1, min.pct = 0.25)
+head(cluster1.markers, n = 5)
+```
+
+```{r}
+# find all markers distinguishing cluster 1 from clusters 0
+cluster1a.markers <- FindMarkers(RH41, ident.1 = 0, ident.2 = c(1:3), min.pct = 0.25)
+head(cluster1a.markers, n = 5)
+```
+
+```{r}
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+RH41.markers <- FindAllMarkers(RH41, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+RH41.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_logFC)
+
+cluster1.markers <- FindMarkers(RH41, ident.1 = 0, logfc.threshold = 0.25, test.use = "roc", only.pos = TRUE)
+
+VlnPlot(RH41, features = c("MICAL2", "MICALL2"))
+```
+
+```{r}
+# you can plot raw counts as well
+VlnPlot(RH41, features = c("LTBP4", "MYB", "LHX2", "SMAD5","MYBL2","PAX7","ANXA3","SMAD7","PAX3"), slot = "counts", log = TRUE)
+```
+
+```{r}
+VlnPlot(RH41, features = c("CAV2", "MYOG"), slot = "counts", log = TRUE)
+```
+
+```{r}
+FeaturePlot(RH41, features = c("PLK1"))
+```
+
+```{r}
+top10 <- RH41.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
+DoHeatmap(RH41, features = top10$gene) + NoLegend()
+```
+
+```{r}
+#miR340 targets, find clusters
+VlnPlot(RH41, features = c("CD44", "CAV2", "CKAP2L", "CTSL","DBF4","EMP1"),
+        slot = "counts", log = TRUE)
+```
+
+```{r}
+VlnPlot(RH41, features = c("ENC1","ESCO2","FGF7","FN1","HELLS","IGFBP3"),
+        slot = "counts", log = TRUE)
+```
+
+```{r}
+VlnPlot(RH41, features = c("KIF23","MAD2L1","NCAPH","NETO2","NRAS","PLAU"),
+        slot = "counts", log = TRUE)
+```
+
+```{r}
+VlnPlot(RH41, features = c("PLK1","RHOC","THBS1","VCAN"), slot = "counts",
+        log = TRUE)
+```
+
+```{r}
+#miR449A targets, find clusters
+VlnPlot(RH41, features = c("AXL", "CDCA8", "EMP1", "LIMD2","NRN1","RAI14"),
+        slot = "counts", log = TRUE)
+```
+
+```{r}
+VlnPlot(RH41, features = c("SKA1","SNAI1","TOP2A","VAT1","ACTC1"),
+        slot = "counts", log = TRUE)
+```
+
+```{r}
+###CLUSTER 8
+VlnPlot(RH41, features = c("AXL","CAV2","CD44","CTSL","EMP1","IGFBP3","KLF6",
+                           "PLAU","TGFB1","VAT1"), slot = "counts", log = TRUE)
+```
+
+```{r}
+###ACTC
+VlnPlot(RH41, features = c("ACTC1","FN1"), slot = "counts", log = TRUE)
+```
+
+```{r}
+### Find markers for every cluster compared to all remaining cells, report only
+### the positive ones
+allMarkers <- FindAllMarkers(RH41, min.pct = 0.10, min.diff.pct=0.25,
+                             logfc.threshold = 0.25, return.thresh = 0.01,
+                             only.pos = TRUE)
+table(allMarkers$cluster)
+#0   1   2   3   4   5   6   7   8 
+#3   1   2  58  28  50  14  29 167
+```
+
+```{r}
+sum(duplicated(allMarkers$gene))
+# 96
+```
+
+```{r}
+saveRDS(allMarkers, file="allMarkers.rds")
+```
+
+```{r}
+### Create list with markers
+totalNrClusters<-max(as.numeric(names(table(allMarkers$cluster))))
+totalNrClustersPlusOne<-totalNrClusters+1
+markersList<-list()
+
+for(i in 1:totalNrClustersPlusOne){
+  clusterNr<-i-1
+  
+  tmp<-allMarkers[allMarkers$cluster==clusterNr,]
+  tmp$score<-tmp$pct.1/tmp$pct.2*tmp$avg_logFC
+  
+  markersList[[i]]<-tmp[order(tmp$score, decreasing=TRUE),]
+}
+
+names(markersList)<-paste0("cluster",0:totalNrClusters)
+```
+
+```{r}
+### Write to Excel (NO!!!)
+write.xlsx(markersList, file = "summaryMarkers_allClusters.xlsx")
+```
+
+```{r}
+###Cell Cycle#####
+cc.genes <- readLines(con = "GSM3110765/regev_lab_cell_cycle_genes.txt")
+s.genes <- cc.genes[1:43]
+g2m.genes <- cc.genes[44:97]
+
+RH41.cycle <- CellCycleScoring(RH41, s.features = s.genes,
+                               g2m.features = g2m.genes, set.ident = TRUE)
+
+# view cell cycle scores and phase assignments
+head(RH41.cycle[[]])
+```
+
+```{r}
+# Visualize the distribution of cell cycle markers across
+RidgePlot(RH41.cycle, features = c("PCNA", "TOP2A", "MCM6", "MKI67"), ncol = 2)
+```
+
+```{r}
+# Running a PCA on cell cycle genes reveals, unsurprisingly, that cells separate entirely by
+# phase
+# RH41.cycle <- RunPCA(RH41.cycle, features = c(s.genes, g2m.genes))
+# 
+# DimPlot(RH41.cycle)
+```
+
+```{r}
+###LABELS
+new.cluster.ids <- c("X", "X", "X", "Metastatic niche", "Proliferating cells", "Metastatic niche", 
+                     "X", "Proliferating cells", "Metastatic niche")
+names(new.cluster.ids) <- levels(RH41)
+RH41.labels <- RenameIdents(RH41, new.cluster.ids)
+DimPlot(RH41.labels, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+```
+
